@@ -1,0 +1,388 @@
+		 CSE-506 (Spring 2012) Homework Assignment #1
+			      Handout number 3
+		  (100 points, 12% of your overall grade)
+			   Version 3 (2/3/2012)
+		       Due Sunday 2/19/2012 @ 11:59pm
+
+* PURPOSE:
+
+To get your Linux kernel development environment working; to make small
+changes to the kernel and test them out; to learn about system calls.
+
+* BACKGROUND:
+
+Encrypting files is very useful and important nowadays, but Linux does not
+support this feature natively (yet).  Your task is to create a new system
+call that can take an input file, encrypt or decrypt it, and then produce an
+output file.
+
+Note that while we give you more details below, it is up to you to inspect
+the kernel sources to find out similar helpful examples of code; those will
+provide you with even greater details than what we provide here.
+
+The expected amount of written code for this assignment would be 300-500
+lines of kernel code, and another 100-200 lines of user-level code.  Note,
+however, that a lot of time may be spent reading existing sources and
+debugging the code you write.
+
+* TASK:
+
+Create a Linux kernel module (in vanilla 3.2.y Linux that's in your HW1					Done
+GIT repository) that, when loaded into Linux, will support a new system call
+called
+
+	sys_xcrypt(infile, outfile, keybuf, keylen, flags)						Done
+
+where "infile" is the name of an input file to encrypt or decrypt, "outfile"
+is the output file, "keybuf" is a buffer holding the cipher key, "keylen" is
+the length of that buffer, and "flags" determine if you're encrypting or
+decrypting.
+
+If the low (LSB) bit of flags is 1, you should encrypt the infile.  If the
+LSB is 0, you should decrypt the infile.								Done
+
+An unencrypted (cleartext) file is just a sequence of arbitrary bytes.  An
+encrypted (ciphertext) file has two sections.  The first section is a fixed
+length "preamble" and contains some information to validate the decryption
+key (e.g., a secure hash/checksum of the user-level pass-phrase).  This first
+section may include other information as you see fit (e.g., original file
+size, and stuff for extra-credit).  The second section is just the input
+file data, encrypted as per the cipher block size, cipher key, etc.					Done
+
+The most important thing system calls do first is ensure the validity of the
+input they are given.  You must check for ALL possible bad conditions that
+could occur as the result of bad inputs to the system call.  In that case,
+the system call should return the proper errno value (EINVAL, EPERM, EACCES,
+etc.)  Consult the system errno table and pick the right error numbers for
+different conditions.											Done
+
+The kinds of errors that could occur early during the system call's
+execution are as follows (this is a non-exhaustive list):
+
+- missing arguments passed										
+- null arguments											Done
+- pointers to bad addresses										
+- len and buf don't match										Done
+- invalid flags												Done
+- input file cannot be opened or read									Done
+- output file cannot be opened or written								Done
+- input or output files are not regular, or they point to the same file					Done
+- trying to decrypt a file w/ the wrong key (what errno should you return?)
+- ANYTHING else you can think of (the more error checking you do, the better)
+- Error check for writing to existing file								Done
+
+After checking for these errors, you should open the input and output files
+and begin copying data between the two, encrypting or decrypting the data
+before it is written.  Your code must be efficient.  Therefore, do not waste
+extra kernel memory (dynamic or stack) for the system call.  Make sure
+you're not leaking any memory.  On the other hand, for efficiency, you
+should copy the data in chunks that are native to the system this code is
+compiled on, the system page size (PAGE_CACHE_SIZE or PAGE_SIZE).  Hint:
+allocate one page as temporary buffer.									Done
+
+Note that the last page you write could be partially filled and that your				
+code should handle zero length files as well.								Done
+
+Also note that ciphers have a native block size (e.g., 64 bit) and your file 
+may have to be padded to the
+cipher block size.  Lastly, certain ciphers/modes don't care about blocking
+sizes so they won't need padding. The padding scheme you should use must work
+under all circumstances (e.g., padding with zeros doesn't work, because zeros
+are a valid input file).
+
+The output file should be created with the user/group ownership of the					Done
+running process, and its protection mode should NOT be less than the input
+file.
+
+Both the input and output files may be specified using relative or absolute
+pathnames.  Do not assume that the files are always in the current working				Done
+directory.
+
+If no error occurred, sys_xcrypt() should return 0 to the calling process.
+If an error occurred, it should return -1 and ensure that errno is set for
+the calling process.  Choose your errno's appropriately.						Done
+
+If an error occurred in trying to write some of the output file, the system
+call should NOT produce a partial output file.  Instead, remove any
+partially-written output file and return the appropriate error code.					Done
+
+Write a C program called "xcipher" that will call your syscall.  The program
+should have no output upon success and use perror() to print out information
+about what errors occurred.  The program should take three arguments:
+
+- flag: -e to encrypt; -d to decrypt
+- flag: -c ARG to specify the type of xcipher (as a string name)
+  [Note: this flag is mainly for the extra credit part]
+- flag: -p ARG to specify the encryption/decryption key
+- flag: -h to provide a helpful usage message
+- input file name
+- output file name											Done
+
+You can process options using getopt(3).  (Note that specifying the
+password on the command line is highly insecure, but it'd make grading
+easier.  In reality, one would use getpass(3) to input a password.)  You
+should be able to execute the following command:
+
+	./xcipher -p "this is my password" -e infile outfile						Done
+
+User-level passwords should be at least 6 characters long.  Nevertheless, you
+should not just pass the password into the kernel as is: it is too short.
+You need to ensure that you pass a correctly sized encryption key into the
+kernel.  You should remove any newline character ('\n'), and then convert
+the human readable password into a good length key.  Use a cryptographic
+checksum algorithm such as MD5(3) or SHA1(3) to generate a good key to pass
+to the kernel.  An even better way would be to use a PKCS#5 library to
+generate secure hashes (check "man -k pkcs" for more info).
+
+* SYSTEM CALLS IN Linux Kernel 3.x:
+
+As of kernel 2.6, a kernel module is not allowed to override system calls
+(long story, I'll tell you in class :-) You will have to find a way to add
+system calls in a clean way to your kernel, such that it works for every
+architecture.  Ideally, the new syscall should use an unused system call
+number.
+
+* USING THE CIPHERS:
+
+You should perform all of your encryption in Cipher Block Chaining (CBC) mode
+on whole pages (4KB on Linux x86).
+
+Use the Linux kernel built-in CryptoAPI.  To learn how to use it, see the
+kernel documentation that comes with the CryptoAPI option.  You don't need
+to be an expert in security or encryption to do this assignment.  Part of
+what this assignment will teach you is how to work with someone else's code,
+even if all you understand is the API to that code (and not the internals).
+
+For this assignment, use the AES cipher only (i.e., hard-code it in your
+kernel code).  (But see the Extra Credit section below.)
+
+* READING FILES FROM INSIDE THE KERNEL
+
+Here's an example function that can open a file from inside the kernel, read
+some data off of it, then close it.  This will help you in this assignment.
+You can easily extrapolate from this how to write data to another file.
+(Warning: the code below is from 2.4.  Adapt it as needed.)
+
+/*
+ * Read "len" bytes from "filename" into "buf".
+ * "buf" is in kernel space.
+ */
+int
+wrapfs_read_file(const char *filename, void *buf, int len)
+{
+    struct file *filp;
+    mm_segment_t oldfs;
+    int bytes;
+    				/* Chroot? Maybe NULL isn't right here */
+    filp = filp_open(filename, O_RDONLY, 0);
+    if (!filp || IS_ERR(filp)) {
+	printk("wrapfs_read_file err %d\n", (int) PTR_ERR(filp));
+	return -1;  /* or do something else */
+    }
+
+    if (!filp->f_op->read)
+	return -2;  /* file(system) doesn't allow reads */
+
+    /* now read len bytes from offset 0 */
+    filp->f_pos = 0;		/* start offset */
+    oldfs = get_fs();
+    set_fs(KERNEL_DS);
+    bytes = filp->f_op->read(filp, buf, len, &filp->f_pos);
+    set_fs(oldfs);
+
+    /* close the file */
+    filp_close(filp, NULL);
+
+    return bytes;
+}
+
+* TESTING YOUR CODE:
+
+You may choose to hard-code the syscall into your kernel, or do it as a
+loadable kernel module (loadable kernel modules makes it easier to
+unload/reload a new version of the code).  Write user-level code to test
+your program carefully.
+
+If you choose a kernel module, then once your module is loaded, the new
+system call behavior should exist, and you can run your program on various
+input files.  Check that each error condition you coded for works as it
+should.  Check that the modified file is changed correctly.
+
+Finally, although you may develop your code on any Linux machine, we will
+test your code using the same Virtual Machine distribution (with all
+officially released patches applied as of the date this assignment is
+released), and using the Linux 3.2.y kernel.  It is YOUR responsibility
+to ensure that your code runs well under these conditions.  We will NOT test
+or demo your code on your own machine or laptop!  So please plan your work
+accordingly to allow yourself enough time to test your code on the machines
+for which we have given you a login account (these are the same exact
+machines we will test your code on when we grade it).
+
+Additionally, you strongly suggest that you enable CONFIG_DEBUG_SLAB and
+other useful debugging features under the "Kernel hacking" configuration
+menu.  When grading the homework, we will use a kernel tuned for
+debugging---which may expose bugs in your code that you can't easily catch
+without debugging support.  So it's better for YOU to have caught and fixed
+those bugs before we do.
+
+Lastly, note that even if your system call appears to work well, it's
+possible that you've corrupted some memory state in the kernel, and you may
+not notice the impact until much later.  If your code begins behaving
+strangely after having worked better before, consider rebooting your VM.
+
+* STYLE AND MORE:
+
+Aside from testing the proper functionality of your code, we will also
+carefully evaluate the quality of your code.  Be sure to use a consistent
+style, well documented, and break your code into separate functions and/or
+source files as it makes sense.
+
+To be sure your code is very clean, it should compile with "gcc -Wall
+-Werror" without any errors or warnings!  We'll deduct points for any
+warning that we feel should be easy to fix.
+
+Read Documentation/CodingStyle to understand which coding style is preferred
+in the kernel and stick to it for this assignment.  Run your kernel code
+through the syntax checker in scripts/checkpatch.pl (with the "strict"
+option turned on), and fix every warning that comes up.  Cleaner code tends
+to be less buggy.
+
+If the various sources you use require common definitions, then do not
+duplicate the definitions.  Make use of C's code-sharing facilities such as
+common header files.
+
+You must include a README file with this and any assignment. The
+README file should briefly describe what you did, what approach you
+took, results of any measurements you might have made, which files are
+included in your submission and what they are for, etc.  Feel free to
+include any other information you think is helpful to us in this README; it
+can only help your grade (esp. for Extra Credit).
+
+* SUBMISSION
+
+You will need to submit all of your sources, headers, scripts, Makefiles,
+and README.  Submit all of your files using GIT.  See general GIT submission
+guidelines on the class Web site.
+
+As part of this assignment, you should also build a 3.2.y kernel that's
+as small as you can get (but without breaking the normal CentOS boot).  For
+example, there are dozens of file systems available: you need at least ext3
+and nfs (client), but you don't need XFS o Reiserfs.  Commit your .config
+kernel file into GIT, but rename it "kernel.config".  We will grade you on
+how small your kernel configuration is with the following exceptions:
+
+1. All start time servers that run by default in the VM provided, should
+   start without failing.
+
+2. We won't count "kernel hacking" options: so you may enable as many of
+   them as you'd like.
+
+To submit new files, create a directory named "hw1" inside hw1-<user>
+directory that you checked out. Remember to git add, commit, and push this
+new directory. Put all new files that you add in this directory. This may
+include user space program (.c and .h files), README, kernel files (in case
+you are implementing system call as a loadable kernel module), Makefile,
+kernel.config, or anything else you deem appropriate.
+
+For existing kernel source to which you make modification, use git
+add, commit, and push as mentioned on class web site.
+
+There must be a Makefile in hw1/ directory. Doing a "make" in hw1/
+should accomplish the following:
+
+1. Compile user space program to produce an executable by the name
+   "xcipher".  This will be used to test your system call.
+
+2. In case you are implementing system call as a loadable kernel module, the
+   "make" command should also produce a sys_xcrypt.ko file which can be
+   insmod into the kernel.
+
+(Use gcc -Wall -Werror in makefile commands.  We will anyway add them if you
+don't :-)
+
+The hw1/ directory should also contain a "kernel.config" file which will be
+used to bring up your kernel.
+
+Note that in case you are implementing system call directly in the kernel
+code (and not as a loadable kernel module), then just compiling and
+installing your kernel should activate the system call.
+
+Just to give you an idea how we will grade your submission: We will check
+out your git repository.  We will use kernel.config file in hw1/
+subdirectory to compile and then install your kernel.  We will then do a
+make in hw1/ subdirectory.  If your implementation is based on a loadable
+module, we will expect sys_xcrypt.ko to be present in hw1/ after doing a
+make.  We will then insmod it and use hw1/xcipher (also generated as part of
+make) to test your system call on various inputs.  Note that insmod step
+will be skipped in case you implement system call directly into the kernel.
+
+PLEASE test your submission before submitting it, by doing a dry run of
+above steps. DO NOT make the common mistake of writing code until the very
+last minute, and then trying to figure out how to use GIT and skipping the
+testing of what you submitted.  You will lose valuable points if you do not
+get to submit on time or if you submission is incomplete!!!
+
+Make sure that you follow above submission guidelines strictly.  We *will*
+deduct points for not following this instructions precisely.
+
+* EXTRA CREDIT (OPTIONAL, total 20 points)
+
+If you do any of the extra credit work, then your EC code must be wrapped in
+
+	#ifdef EXTRA_CREDIT
+		// EC code here
+	#else
+		// base assignment code here
+	#endif
+
+[A] 4 points.
+
+Augment your module to utilize the Initialization Vector (IV) part of the
+xcipher.  Without having to know much about the IV, it is useful to
+understand that setting it to a different value each time you encrypt or
+decrypt a chunk of bytes produces stronger encryption that is harder to
+break.  A common way to set the 8 bytes of the IV is as follows:
+
+- first 8 bytes are the index of the page (or page number) that you are
+  encrypting or decrypting (e.g., on an i386 system with a 4096-byte page
+  size, bytes 0-4095 are in page 0, bytes 4096-8191 are in page 1, etc.).
+
+- set the remaining 8 bytes to the inode number of the file.
+
+Note: Your first IV information (assuming you "chain" them) should be stored
+in the cipher file preamble.
+
+[B] 6 points
+
+Support multiple ciphers.  You should pass the cipher name as a string using
+the "-c ARG" option.  Change the system call to accept an extra argument at
+the end called "char *cipher".  This variable should be a constant string,
+null terminated, whose value can be one of: "blowfish" for the Blowfish
+cipher; "des" for DES; "des3_ede" for Triple DES; etc.  The type of cipher
+must always be specified and must always be a valid cipher that the Linux
+kernel CryptoAPI understands.  All kernel-supported ciphers should be
+allowed; return EINVAL if the user specifies an invalid cipher name.  The
+cipher name (or ID) should also be stored in the preamble.
+
+[C] 5 points.
+
+Support multiple encryption unit sizes and key lengths.  You will have to
+augment the system call as needed to pass the new info, and the user-level
+tool.  For example:
+
+	$ ./xcipher -u 16000 -l 256 -e infile outfile
+
+where -l specifies the key length to 256 bits, and -u specifies that the
+encryption unit should be in whole chunks of 16000 bytes (instead of the
+default 4KB).  If not specified, -u should default to PAGE_SIZE, and -l to
+128 bits.  Note that the argument to -l can be any valid key length that the
+cipher accepts (for example, Blowfish can't use keys smaller than 128 bits);
+however, the argument to -u can be ANY positive number that the cipher will
+accept (even odd numbers).
+
+Good luck.
+
+* Change History:
+
+1/31: updated to use kernel 3.2.x.
+2/3: clarify loadable module; fix typo in EC ifdef.

@@ -1,0 +1,81 @@
+CSE 506 HW1
+Piyush Kansal (piyush.kansal@gmail.com)
+02/22/12
+
+1) WHAT IS THIS ABOUT?
+
+	- A new system call (sys_crypt) which has been implemented in Linux for encrypting/decrypting files.
+
+2) WHAT IS IMPLEMENTED?
+
+	I've implemented the basic component by static linking.
+
+3) FILES CHANGED/ADDED?
+
+	CHANGED:
+	- ~/Makefile: Updated for new directory "hw1"
+	- ~/hw1/kernel.config: Updated ".config" file for minimal size kernel
+	- ~/arch/x86/include/asm/unistd_32.h: Updated for new system call number
+	- ~/arch/x86/kernel/syscall_table_32.S: Updated for a new system call symbol
+	- ~/include/linux/syscalls.h: Updated the new system call declaration
+
+	ADDED:
+	- ~/hw1/sys_xcrypt.c: Contains new system call definition
+	- ~/hw1/sys_xcrypt.h: Contains header files and macros required by new system call
+	- ~/hw1/xcipher.c: Contains user level program
+	- ~/hw1/xcipher.h: Contains header files required by user level program
+	- ~/hw1/Makefile: Contains build and clean instructions for user level program and new system call
+
+4) HOW DOES IT WORK?
+
+	- There are two components: user-level program and system call
+	- User program accepts i/ps from user like i/p file, o/p file, key etc
+	- It then performs validation check on i/p values and if it founds an error, it reports it back to the user
+	  and returns -1. Else it generates a MD5 hash from the user supplied password and then send these details 
+	  to the system call
+	- It is system call which does the actual encryption/decryption. It again performs validation checks on the 
+	  user supplied data. During the processing, if it encounters any error then it reports it back the user 
+	  program with appropriate errno
+	- If everthing goes fine, then system call creates the required o/p file and return 0
+
+	- In Linux, when a system call is made from user level, Linux kernel checks it in system_call_table[] using 
+	  the system call number passed from user level. Thus, I created a new system call number "__NR_sys_xcrypt"
+	  and allocated it value "349"
+	- And then I defined it in a file and statically linked it with kernel by recompiling the kernel
+	- I also developed a user-level program which calls the system call using syscall()
+
+5) HOW DO I SELECT THE KEY SIZE?
+
+	- AES needs 16 Byte key, so I chose MD5 which hashes the password provided by end-user into a 16 Byte key
+	- This key is then passed to the system call for encryption/decryption
+
+6) WHAT ABOUT IV?
+
+	- IV buffer is initialized with a fixed character everytime
+
+7) WHAT DO I STORE IN PREAMBLE?
+
+	- Preamble is of fixed size, 64 Byte and stores following:
+		- Key sent by user level program in encrypted format. Since it is in hex format, it gets converted 
+		  to 16*2 = 32 bytes
+		- Input file size converted into a character array of size 19 (the max value of unsigned long long) 
+		  along with padding of 13 bytes in encrypted format
+
+	        0                32            	   51        64
+		-----------------------------------------------
+		| key(encrypted) | input file size |  padding |
+		-----------------------------------------------
+
+8) HOW DO I HANDLE FILES THAT ARE NOT MULTIPLE OF CIPHER BLOCK SIZE?
+
+	- During encryption, I pad them with required number of bytes so that the total size becomes equal to the
+	  block size. I also store the length of the file in the preamble of the encrypted file
+	- During decryption, I read the file size from the preamble and store it in a temporary variable. Then once
+	  I start decrypting data in block size, I keep on reducing the block size from this temporary variable. Once
+	  I reach the last block, this temporary variable helps in figuring out the number of padded characters. Thus, 
+	  after decrypting the block, I remove the required number of padded characters and then write it to the o/p file
+
+9) HOW DID WE CUT DOWN ON DEVELOPMENT TIME EVEN WHILE DEVELOPING SYSTEM CALL FOR STATIC LINKING?
+
+	- We started developing it as a module and finally removed the init_module, exit_module etc while checking 
+	  in the code. This way we were able to do it quite fast
