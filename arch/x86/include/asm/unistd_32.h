@@ -355,9 +355,6 @@
 #define __NR_process_vm_readv	347
 #define __NR_process_vm_writev	348
 #define __NR_sys_xcrypt		349
-#define __NR_sys_test1		350
-#define __NR_sys_test2		351
-#define __NR_sys_test3		352
 
 #ifdef __KERNEL__
 

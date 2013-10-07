@@ -856,4 +856,9 @@ asmlinkage long sys_process_vm_writev(pid_t pid,
 				      const struct iovec __user *rvec,
 				      unsigned long riovcnt,
 				      unsigned long flags);
+asmlinkage int sys_xcrypt(	const char * const infile,
+							const char * const opfile,
+							const char * const keybuf,
+							const int keylen,
+							const short int flags );
 #endif
