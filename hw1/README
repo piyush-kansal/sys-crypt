@@ -4,7 +4,7 @@ Piyush Kansal (piyush.kansal@gmail.com)
 
 1) WHAT IS THIS ABOUT?
 
-	- A new system call (sys_crypt) which has been implemented in Linux for encrypting/decrypting files.
+	- A new system call (sys_xcrypt) which has been implemented in Linux for encrypting/decrypting files.
 
 2) WHAT IS IMPLEMENTED?
 
